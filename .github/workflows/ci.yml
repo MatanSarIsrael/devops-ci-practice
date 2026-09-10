@@ -82,7 +82,8 @@ jobs:
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.58.1 image \
             --severity HIGH,CRITICAL \
-            --exit-code 0 \
+            --exit-code 1 \
+            --ignore-unfixed \
             ${{ steps.meta.outputs.image }}
 
       - name: Push the image
