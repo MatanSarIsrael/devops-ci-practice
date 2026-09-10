@@ -82,7 +82,7 @@ jobs:
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.58.1 image \
             --severity HIGH,CRITICAL \
-            --exit-code 0 \
+            --exit-code 1 \
             ${{ steps.meta.outputs.image }}
 
       - name: Push the image
@@ -118,12 +118,31 @@ jobs:
           docker run -d --name smoketest -p 8080:8080 \
             -e APP_COMMIT=${{ needs.package.outputs.short_sha }} \
             ${{ needs.package.outputs.image }}
-          sleep 3
-          curl -sf localhost:8080/health
-          echo
-          curl -sf localhost:8080/version
-          echo
-          docker rm -f smoketest
+
+          for i in $(seq 1 30); do
+            if curl -sf localhost:8080/health > /dev/null; then
+              echo "ready after ${i}s"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "never became ready"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          curl -sf localhost:8080/health; echo
+          curl -sf localhost:8080/version; echo
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          docker ps -a --filter name=smoketest
+          docker logs smoketest || echo "no logs available"
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f smoketest || true
 
   notify:
     runs-on: ubuntu-latest
