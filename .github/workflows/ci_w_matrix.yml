@@ -5,6 +5,17 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which environment to target"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+  
+  
 
 jobs: # list of jobs
   test: # one job named test
