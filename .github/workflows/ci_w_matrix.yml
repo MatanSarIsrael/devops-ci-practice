@@ -30,3 +30,25 @@ jobs: # list of jobs
 
       - name: Run tests
         run: pytest -v
+        
+  security: # 2nd job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # overrides checkout default which is getting only the last commit. setting 0 takes the whole history
+
+      - name: Scan for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2 git /repo -v
+
+  package:
+    runs-on: ubuntu-latest
+    needs: [test, security] # meaninig both test and secutiry jobs need to pass, package will be skipped otherwise NOT FAIL! (failure still an option)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Report what would be built
+        run: | # ${{ github.sha }} is the commit SHA. That echo line is a placeholder for what you'll do for real next: build a Docker image and tag it with the commit SHA, so every deployed artifact traces back to exact source.
+          echo "All checks passed for commit ${{ github.sha }}"
+          echo "Would build image tagged: myapp:${{ github.sha }}"
