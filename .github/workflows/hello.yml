@@ -1,0 +1,17 @@
+name: Hello
+
+on: push
+
+jobs:
+  greet: # a job named greet which does the following : 
+    runs-on: ubuntu-latest # runner type will be ubuntu-latest
+    steps: # a list of tasks to do 
+      - name: Say hello
+        run: echo "Hello from the runner" # run executes a shell command
+
+      - name: Show the environment
+        run: | # | is YAMLs block scalar marker, meaning run everything below as a multi line string. $GITHUB_SHA and $GITHUB_REF are environment variables the runner sets automatically. There are dozens; these two identify exactly what's being built.
+          echo "Commit: $GITHUB_SHA"
+          echo "Branch: $GITHUB_REF"
+          pwd
+          ls -la
