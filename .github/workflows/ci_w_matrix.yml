@@ -65,9 +65,37 @@ jobs: # list of jobs
 #          echo "All checks passed for commit ${{ github.sha }}"
 #          echo "Would build image tagged: myapp:${{ github.sha }}"
   
+#  package:
+#    runs-on: ubuntu-latest
+#    needs: [test, security]
+#    steps:
+#      - uses: actions/checkout@v4
+#
+#      - name: Compute image metadata
+#        id: meta
+#        run: | # this part gets the last commit hash, echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT writes one line into the runner's output file. Note ${SHORT_SHA} here is bash variable expansion, resolved by the shell during execution.
+#          SHORT_SHA=$(git rev-parse --short HEAD)
+#          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+#          echo "image_tag=myapp:${SHORT_SHA}" >> $GITHUB_OUTPUT
+#          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+#
+#      - name: Show the raw output file
+#        run: |
+#          echo "--- contents of GITHUB_OUTPUT path ---"
+#          cat $GITHUB_OUTPUT || echo "(file is fresh for this step, so it's empty)"
+#
+#      - name: Use the computed values
+#        run: |
+#          echo "Short SHA:  ${{ steps.meta.outputs.short_sha }}"
+#          echo "Image tag:  ${{ steps.meta.outputs.image_tag }}"
+#          echo "Built at:   ${{ steps.meta.outputs.built_at }}"
+#          echo "Would run:  docker build -t ${{ steps.meta.outputs.image_tag }} ."
   package:
     runs-on: ubuntu-latest
     needs: [test, security]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,17 +107,47 @@ jobs: # list of jobs
           echo "image_tag=myapp:${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
-      - name: Show the raw output file
-        run: |
-          echo "--- contents of GITHUB_OUTPUT path ---"
-          cat $GITHUB_OUTPUT || echo "(file is fresh for this step, so it's empty)"
+      - name: Set an environment variable for later steps
+        run: echo "APP_VERSION=0.1.0" >> $GITHUB_ENV
 
-      - name: Use the computed values
+      - name: Use the step outputs
         run: |
           echo "Short SHA:  ${{ steps.meta.outputs.short_sha }}"
           echo "Image tag:  ${{ steps.meta.outputs.image_tag }}"
           echo "Built at:   ${{ steps.meta.outputs.built_at }}"
-          echo "Would run:  docker build -t ${{ steps.meta.outputs.image_tag }} ."
+
+      - name: Use the environment variable
+        run: |
+          echo "APP_VERSION as a shell variable: $APP_VERSION"
+          echo "Full version string: $APP_VERSION-${{ steps.meta.outputs.short_sha }}"
+
+      - name: Write the run summary
+        run: |
+          echo "### Build summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image tag | \`${{ steps.meta.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`$APP_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: package
+    steps:
+      - name: Consume the tag from the package job
+        run: |
+          echo "Deploying image: ${{ needs.package.outputs.image_tag }}"
+          echo "Built from commit: ${{ needs.package.outputs.short_sha }}"
+          echo "Would run: docker pull ${{ needs.package.outputs.image_tag }}"
+
+      - name: Show what does NOT cross between jobs
+        run: |
+          echo "APP_VERSION here is: '$APP_VERSION'"
+          echo "(empty, because GITHUB_ENV is scoped to one job)"
+
+
   notify:
     runs-on: ubuntu-latest
     needs: [test, security, package]
