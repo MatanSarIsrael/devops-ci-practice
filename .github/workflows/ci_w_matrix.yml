@@ -1,0 +1,32 @@
+name: CI_w_matrix # name of the git actions Workflow 
+
+on:
+  push: # using push like so (with :) makes it a blocker meaning not on every push but only on pushed to main
+    branches: [master]
+  pull_request:
+
+jobs: # list of jobs
+  test: # one job named test
+    runs-on: ubuntu-latest
+    strategy: 
+      fail-fast: false # instead of stop on first job fail, run all three below
+      matrix: # makes it so this job will run 3 times, one for each python version stated in matrix below
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }} # Anything inside ${{ }} is evaluated by GitHub before the step runs and substituted in.
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }} # same here
+          cache: pip # caches downloaded packages between runs, keyed on your requirements.txt.
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Run tests
+        run: pytest -v
