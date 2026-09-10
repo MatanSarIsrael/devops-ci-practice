@@ -67,7 +67,7 @@ jobs: # list of jobs
   notify:
     runs-on: ubuntu-latest
     needs: [test, security, package]
-    if: always()
+    if: always() # run even if above stream didnt work
     steps:
       - name: Report the outcome
         run: |
