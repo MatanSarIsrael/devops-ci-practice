@@ -4,6 +4,7 @@ on:
   push: # using push like so (with :) makes it a blocker meaning not on every push but only on pushed to main
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 jobs: # list of jobs
   test: # one job named test
