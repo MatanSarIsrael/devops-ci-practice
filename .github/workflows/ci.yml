@@ -1,21 +1,29 @@
-name: CI # name of the git actions Workflow 
+name: CI
 
 on:
-  push: # using push like so (with :) makes it a blocker meaning not on every push but only on pushed to main
+  push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
-jobs: # list of jobs
-  test: # one job named test
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
-      - name: Check out the code # name of the tasks to perform (like a description) 
-        uses: actions/checkout@v4 # @v4 means major version.
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
-        with: # is passing parameter to the action (like vargin or function inputs)
-          python-version: "3.12"
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -25,3 +33,106 @@ jobs: # list of jobs
 
       - name: Run tests
         run: pytest -v
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2 git /repo -v
+
+  package:
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image=${REGISTRY}/${REPO_LOWER}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Log in to the registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Build the image
+        run: |
+          docker build \
+            --build-arg APP_COMMIT=${{ steps.meta.outputs.short_sha }} \
+            -t ${{ steps.meta.outputs.image }} .
+
+      - name: Scan the image for vulnerabilities
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.1 image \
+            --severity HIGH,CRITICAL \
+            --exit-code 0 \
+            ${{ steps.meta.outputs.image }}
+
+      - name: Push the image
+        run: docker push ${{ steps.meta.outputs.image }}
+
+      - name: Write the run summary
+        run: |
+          echo "### Build summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ steps.meta.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: package
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to the registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Pull the image built by the package job
+        run: docker pull ${{ needs.package.outputs.image }}
+
+      - name: Run it and verify it responds
+        run: |
+          docker run -d --name smoketest -p 8080:8080 \
+            -e APP_COMMIT=${{ needs.package.outputs.short_sha }} \
+            ${{ needs.package.outputs.image }}
+          sleep 3
+          curl -sf localhost:8080/health
+          echo
+          curl -sf localhost:8080/version
+          echo
+          docker rm -f smoketest
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [test, security, package, deploy]
+    if: always()
+    steps:
+      - name: Report the outcome
+        run: |
+          echo "test:     ${{ needs.test.result }}"
+          echo "security: ${{ needs.security.result }}"
+          echo "package:  ${{ needs.package.result }}"
+          echo "deploy:   ${{ needs.deploy.result }}"

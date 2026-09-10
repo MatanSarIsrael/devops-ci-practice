@@ -1,0 +1,7 @@
+.git
+.github
+__pycache__
+*.pyc
+test_*.py
+.pytest_cache
+*:Zone.Identifier
