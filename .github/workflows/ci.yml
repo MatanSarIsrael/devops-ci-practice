@@ -2,7 +2,7 @@ name: CI # name of the git actions Workflow
 
 on:
   push: # using push like so (with :) makes it a blocker meaning not on every push but only on pushed to main
-    branches: [master]
+    branches: [main]
   pull_request:
 
 jobs: # list of jobs
