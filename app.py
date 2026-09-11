@@ -40,6 +40,6 @@ signal.signal(signal.SIGTERM, shutdown)
 
 if __name__ == "__main__":
     server = HTTPServer(("", 8080), Handler)
-    print(f"listening on 8080 version={VERSION} commit={COMMIT}", flush=True)
+    print(f"serving on 8080 version={VERSION} commit={COMMIT}", flush=True)
     server.serve_forever()
 
